@@ -1,0 +1,392 @@
+#!/usr/bin/python
+
+from mysql.connector import MySQLConnection, Error
+from configparser import ConfigParser
+from collections import defaultdict
+from collections import Counter
+
+
+#------------------------------------------------------------------------------
+def read_db_config(filename='config.ini', section='mysql'):
+   """ Read database configuration file and return a dictionary object
+   :param filename: name of the configuration file
+   :param section: section of database configuration
+   :return: a dictionary of database parameters
+   """
+   # create parser and read ini configuration file
+   parser = ConfigParser()
+   parser.read(filename)
+
+   # get section, default to mysql
+   db = {}
+   if parser.has_section(section):
+      items = parser.items(section)
+      for item in items:
+         db[item[0]] = item[1]
+   else:
+      raise Exception('{0} not found in the {1} file'.format(section, filename))
+
+   return db
+#------------------------------------------------------------------------------
+def getNetworks(conn):
+   networks = {}
+   try:
+      cursor = conn.cursor()
+      cursor.execute("""SELECT
+    networks.id
+    , networks.tenant_id
+    , networks.name
+    , networks.mtu
+    , ml2_network_segments.network_type
+    , ml2_network_segments.physical_network
+    , ml2_network_segments.segmentation_id
+FROM
+    neutron.ml2_network_segments
+    INNER JOIN neutron.networks 
+        ON (ml2_network_segments.network_id = networks.id)""")
+      rows = cursor.fetchall()
+ 
+      
+      for row in rows:
+         rec = {}
+         rec = { 
+                  'id':  row[0], 
+                  'name' : row[2],
+                  'tenant_id' : row[1],
+                  'mtu'   : row[3],
+                  'network_type' : row[4],
+                  'physical_network' : row[5],
+                  'segmentation_id'  : row[6]
+                  
+               }
+         networks[row[0]] = rec
+      print "Total Networks(s):", cursor.rowcount
+   except Error as e:
+      print(e)
+ 
+   finally:
+      cursor.close()
+      return(networks)
+#------------------------------------------------------------------------------
+def getSubnets(conn):
+   subnets = {}
+   try:
+      cursor = conn.cursor()
+      cursor.execute("SELECT id, tenant_id, name, network_id, ip_version, cidr, gateway_ip, enable_dhcp FROM subnets")
+      rows = cursor.fetchall()
+ 
+      
+      for row in rows:
+         rec = {}
+         rec = { 
+                  'id':  row[0], 
+                  'tenant_id' : row[1],
+                  'name'   : row[2],
+                  'network_id' : row[3],
+                  'ip_version' : row[4],
+                  'cidr'   : row[5],
+                  'gateway_ip'   : row[6],
+                  'enable_dhcp'   : row[7]
+               }
+         subnets[row[0]] = rec
+      print "Total Subnet(s):", cursor.rowcount
+   except Error as e:
+      print(e)
+ 
+   finally:
+      cursor.close()
+      return(subnets)
+  
+      
+#------------------------------------------------------------------------------    
+def getDomains(conn):
+   domains  = {}
+   try:
+      cursor = conn.cursor()
+      cursor.execute("SELECT id,name from keystone.domain")
+      rows = cursor.fetchall()
+   
+      
+      for row in rows:
+         rec = {}
+         rec = { 
+                  'id':  row[0], 
+                  'name' : row[1]
+               }
+         domains[row[1]] = rec
+      print "Total domain(s):", cursor.rowcount
+   except Error as e:
+      print(e)
+ 
+   finally:
+      cursor.close()
+      return(domains)
+#------------------------------------------------------------------------------    
+def getProjects(conn):
+   projects  = {}
+   try:
+      cursor = conn.cursor()
+      cursor.execute("SELECT id,name, domain_id from keystone.project where is_domain = 0")
+      rows = cursor.fetchall()
+   
+      
+      for row in rows:
+         rec = {}
+         rec = { 
+                  'id':  row[0], 
+                  'name' : row[1],
+                  'domain_id' : row[2]
+                  
+               }
+         projects[row[1]] = rec
+      print "Total projects(s):", cursor.rowcount
+   except Error as e:
+      print(e)
+ 
+   finally:
+      cursor.close()
+      return(projects)
+#------------------------------------------------------------------------------    
+def getRouters(conn):
+   routers  = {}
+   try:
+      dbconfig = read_db_config()
+      #conn = MySQLConnection(**dbconfig)
+      cursor = conn.cursor()
+      cursor.execute("""SELECT
+      routers.id
+    , routers.tenant_id
+    , routers.name
+    , routers.status
+    , routers.admin_state_up
+    , routers.gw_port_id
+    , routers.enable_snat
+    , routerl3agentbindings.l3_agent_id
+    , router_extra_attributes.distributed
+    , router_extra_attributes.service_router
+    , router_extra_attributes.ha
+FROM
+    neutron.routerl3agentbindings
+    INNER JOIN neutron.routers 
+        ON (routerl3agentbindings.router_id = routers.id)
+    INNER JOIN neutron.agents 
+        ON (routerl3agentbindings.l3_agent_id = agents.id)
+    INNER JOIN neutron.router_extra_attributes 
+        ON (router_extra_attributes.router_id = routers.id)""")
+      rows = cursor.fetchall()
+      #print "Rows = "
+      #print rows
+      
+      for row in rows:
+         rec = {}
+         rec = { 
+                  'uuid' : row[0], 
+                  'tenantid' : row[1], 
+                  'name' : row[2],
+                  'status' : row[3],
+                  'enabled' : row[4],
+                  'gw_port_id' : row[5],
+                  'snat' : row[6],
+                  'active_on' : row[7],
+                  'distributed' : row[8],
+                  'service_rtr' : row[9],
+                  'isHA' : row[10]
+               }
+         print "REC" + rec;      
+         routers[row[0]] = rec
+      print "Total routers(s):", cursor.rowcount
+   except Error as e:
+      print(e)
+ 
+   finally:
+      cursor.close()
+      return(routers)
+#------------------------------------------------------------------------------
+
+def generateSummary(my_routers, my_ports, my_projects, my_ipalloc, my_networks, my_subnets):
+   #print my_ports;
+   print #my_routers;
+   print "------------------------------------------------------------------------------"
+   for k, v in my_routers.items():
+   
+      routerID = k
+      name = v['name']
+      snat = v['snat']
+      if v['gw_port_id'] is None:
+         print "Router " + name + " does not have a gateway defined. Skipping"
+         continue
+      
+      gw_port_id = v['gw_port_id']
+      
+      print "GatewayPortID = " + gw_port_id
+      snat_value = "No"
+      if snat == 1:
+         snat_value = "Yes"
+      # port details
+      pd = my_ports[gw_port_id]
+      #print my_ports;
+      ipd = my_ipalloc[gw_port_id]
+      
+      network_id = ipd['network_id']; subnet_id = ipd['subnet_id'];
+      print ;
+      #print network_id;
+      north_side_config = pd['mac_address'] + ' / ' + ipd['ip_address'] + ' / ' + str(my_subnets[subnet_id]['cidr'])
+      #+ ' / ' + subnet_cidr
+      
+      
+      
+      
+      #nd = ;
+      
+      
+
+      
+      header_format = '{:10} : {:50}'
+      print header_format.format("Name", name)
+      print header_format.format("Snat", snat_value)
+      print header_format.format("UUID", v['uuid'])
+      print header_format.format("Owner", "blah")
+      print header_format.format("Active On", v['active_on'])
+      #print header_format.format("Distributed", v['distributed'])
+      #print header_format.format("HA", v['ha'])
+      print header_format.format("North Side", north_side_config)
+      print header_format.format("", my_networks[network_id]['name'] + ' / ' + str(my_subnets[subnet_id]['cidr']))
+      print header_format.format("", my_networks[network_id]['network_type'] + ' / ' + my_networks[network_id]['physical_network'] + ' / ' + str(my_networks[network_id]['segmentation_id']))
+      print "------------------------------------------------------------------------------"
+      
+
+
+def getPortDetails(ports, uuid):
+   print ports[uuid];
+   
+   
+
+
+#------------------------------------------------------------------------------    
+def getRouterPorts(conn):
+   routerPorts  = {}
+   try:
+      cursor = conn.cursor()
+      cursor.execute("SELECT router_id, port_id, port_type FROM neutron.routerports where port_type = 'network:router_interface'")
+      rows = cursor.fetchall()
+   
+      
+      for row in rows:
+         #print ">", row[0], "<" , ">", row[1] , "< >" , row[2] , "<"
+         rec = {}
+         rec = { 
+                  'router_id':  row[0], 
+                  'port_id' : row[1]
+               }
+         routerPorts[row[0]] = rec
+      print "Total ports(s):", cursor.rowcount
+   except Error as e:
+      print(e)
+ 
+   finally:
+      cursor.close()
+      return(routerPorts)
+
+
+   
+   
+   
+
+#------------------------------------------------------------------------------    
+def getPorts(conn):
+   ports  = {}
+   try:
+      cursor = conn.cursor()
+      cursor.execute("SELECT id, tenant_id, network_id,mac_address,admin_state_up, status, device_id, device_owner FROM neutron.ports")
+      rows = cursor.fetchall()
+   
+      
+      for row in rows:
+         #print ">", row[0], "<" , ">", row[1] , "< >" , row[2] , "<"
+         rec = {}
+         rec = { 
+                  'uuid':  row[0], 
+                  'tenantid' : row[1], 
+                  'network_id' : row[2],
+                  'mac_address' : row[3],
+                  'enabled' : row[4],
+                  'status' : row[5],
+                  'device_id'    : row[6],
+                  'device_owner'    : row[7]
+               }
+         ports[row[0]] = rec
+      print "Total ports(s):", cursor.rowcount
+   except Error as e:
+      print(e)
+ 
+   finally:
+      cursor.close()
+      return(ports)
+#------------------------------------------------------------------------------    
+def getIPAllocations(conn):
+   ipalloc  = {}
+   try:
+      cursor = conn.cursor()
+      cursor.execute("SELECT port_id, ip_address, subnet_id, network_id FROM neutron.ipallocations")
+      rows = cursor.fetchall()
+      
+      for row in rows:
+         rec = {}
+         rec = { 
+                  'port_id':  row[0], 
+                  'ip_address' : row[1], 
+                  'subnet_id' : row[2],
+                  'network_id' : row[3]
+               }
+         ipalloc[row[0]] = rec
+      print "Total IP Allocation(s):", cursor.rowcount
+   except Error as e:
+      print(e)
+ 
+   finally:
+      cursor.close()
+      return(ipalloc)      
+#------------------------------------------------------------------------------
+def connect():
+   """ Connect to MySQL database """
+
+   db_config = read_db_config()
+
+   try:
+      print('Connecting to MySQL database...')
+      conn = MySQLConnection(**db_config)
+
+      if conn.is_connected():
+         print('connection established.')
+      else:
+         print('connection failed.')
+
+   except Error as error:
+      print(error)
+
+   finally:
+      return conn   
+      #print('Connection closed.')
+   
+#------------------------------------------------------------------------------    
+def disconnect(conn):
+   conn.close();
+   print("MySQL Connection Closed");
+#------------------------------------------------------------------------------
+
+      
+if __name__ == '__main__':
+   dbc = connect()      
+   
+   print "Collecting Information.."
+   networks = getNetworks(dbc)
+   routers  = getRouters(dbc)
+   projects = getProjects(dbc)
+   ports = getPorts(dbc)
+   domains = getDomains(dbc)
+   ipalloc = getIPAllocations(dbc)
+   subnets = getSubnets(dbc)
+   disconnect(dbc)
+   
+   # now generate summary
+   generateSummary(routers, ports, projects, ipalloc, networks, subnets)
