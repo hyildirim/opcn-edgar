@@ -1,0 +1,144 @@
+#!/usr/bin/perl
+
+my %bonds;
+my $line = "-" x 79 . "\n";
+
+
+print "INFO: Reading /etc/network/interfaces to get a list of bond(s)\n";
+open (F, "/etc/network/interfaces");
+while (<F>)
+{
+   chomp;
+   if (/^iface bond\d inet/)
+   {
+      my (@a) = split(/\s+/);
+      $bond = $a[1];
+      $bonds{$bond}{'name'} = $bond;
+      print "INFO: Bond $bond was found\n";
+   }
+
+}
+close F;
+
+
+
+print "INFO: Checking status of each bond\n";
+my $interfaces;
+foreach $bond ( sort keys %bonds)
+{
+        print "INFO: Reading status of $bond\n";
+        # Now read the bond status
+        open (F, "/proc/net/bonding/$bond");
+        while(<F>)
+        {
+           chomp;
+           if (/Slave Interface/)
+           {
+                my ($j, $int) = split(/:\s/);
+                print "INFO: Interface $int is in bond $bond\n";
+                push(@{$bonds{$bond}{'interfaces'}}, $int);
+                $interfaces{$int}{'bond'} = $bond;
+           }
+        if (/Bonding Mode:/)
+        {
+                my ($k, $bondMode) = split(/:\s/);
+                $bonds{$bond}{'mode'} = $bondMode;
+        }
+        }
+        close F;
+
+}
+# Now use ethtool to see the link status
+foreach $int (sort keys %interfaces)
+{
+        $interfaces{$int}{'link'} = "N/A";
+        print "INFO: Checking status of $int using ethtool\n";
+        open (F, "ethtool $int |");
+        while(<F>)
+        {
+                chomp;
+                if (/Link detected:/)
+                {
+                      my ($j, $link) = split(/:\s/);
+                      print "INFO: Link status for $int : $link\n";
+                      $interfaces{$int}{'link'} = $link;
+                }
+        }
+        close F;
+}
+
+
+# For each interface do a TCPDUMP to see LLDP info
+print $line;
+print " ****** WARNING *****\n";
+print $line;
+print "INFO: This may take up to 2.5 minutes\n";
+print "INFO: If it goes over that, please stop the script using CTRL+C\n";
+print "INFO: That implies that LLDP is not enabled on the switchport\n";
+print $line;
+
+foreach $i (sort keys %interfaces)
+{
+    next if (length($i) == 0);
+    if ( $interfaces{$i}{'link'} eq "yes" )
+    {
+      print "INFO: TCPdumping interface $i for LLDP traffic\n";
+      system("tcpdump -nnvv -i $i -c 1 ether proto 0x88cc > /tmp/$i.txt 2>&1");
+    }
+    else
+    {
+       print "WARNING: Interface $i was skipped cause interface does not seem to connected\n";
+    }
+
+}
+
+
+# Now read the tcpdump and gather the port information
+foreach $i (sort keys %interfaces)
+{
+        if ( -f "/tmp/$i.txt" )
+        {
+                open (F, "/tmp/$i.txt");
+                while (<F>)
+                {
+                        chomp;
+                        if ( /Subtype Interface Name/ )
+                        {
+                                my ($j, $int) = split(/:\s+/);
+                                $interfaces{$i}{'port'} = $int;
+
+                        }
+                        if ( /System Name TLV/ )
+                        {
+                                my ($j, $sw ) = split(/:\s+/);
+                                $interfaces{$i}{'switch'} = $sw;
+
+
+                        }
+                }
+
+        }
+
+
+}
+
+# now summarize everything.
+use Sys::Hostname;
+$host = hostname;
+
+
+print $line;
+print "Network cabling for $host\n";
+print $line;
+foreach $b (sort keys %bonds)
+{
+        print "Bond : $b\n";
+        print "Mode : " . $bonds{$b}{'mode'} . "\n\n";
+        foreach $i ( @{$bonds{$b}{'interfaces'}} )
+        {
+                print " Interface    : $i\n";
+                print " Link status  : " . $interfaces{$i}{'link'} . "\n";
+                print " Connected to : " . $interfaces{$i}{'switch'} . " [" . $interfaces{$i}{'port'} . "]\n\n";
+        }
+        print $line;
+}
