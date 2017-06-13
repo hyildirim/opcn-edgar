@@ -60,7 +60,7 @@ FROM
                   
                }
          networks[row[0]] = rec
-      print "Total Networks(s):", cursor.rowcount
+      print "INFO: Total Networks(s):", cursor.rowcount
    except Error as e:
       print(e)
  
@@ -89,7 +89,7 @@ def getSubnets(conn):
                   'enable_dhcp'   : row[7]
                }
          subnets[row[0]] = rec
-      print "Total Subnet(s):", cursor.rowcount
+      print "INFO: Total Subnet(s):", cursor.rowcount
    except Error as e:
       print(e)
  
@@ -103,7 +103,7 @@ def getDomains(conn):
    domains  = {}
    try:
       cursor = conn.cursor()
-      cursor.execute("SELECT id,name from keystone.domain")
+      cursor.execute("select id,name, description from keystone.project where is_domain = 1 and enabled = 1")
       rows = cursor.fetchall()
    
       
@@ -111,10 +111,11 @@ def getDomains(conn):
          rec = {}
          rec = { 
                   'id':  row[0], 
-                  'name' : row[1]
+                  'name' : row[1],
+                  'desc' : row[2]
                }
          domains[row[1]] = rec
-      print "Total domain(s):", cursor.rowcount
+      print "INFO: Total domain(s):", cursor.rowcount
    except Error as e:
       print(e)
  
@@ -138,8 +139,8 @@ def getProjects(conn):
                   'domain_id' : row[2]
                   
                }
-         projects[row[1]] = rec
-      print "Total projects(s):", cursor.rowcount
+         projects[row[0]] = rec
+      print "INFO: Total projects(s):", cursor.rowcount
    except Error as e:
       print(e)
  
@@ -181,7 +182,7 @@ FROM
          rec = {}
          rec = { 
                   'uuid' : row[0], 
-                  'tenantid' : row[1], 
+                  'tenant_id' : row[1], 
                   'name' : row[2],
                   'status' : row[3],
                   'enabled' : row[4],
@@ -192,33 +193,45 @@ FROM
                   'service_rtr' : row[9],
                   'isHA' : row[10]
                }
-         print "REC" + rec;      
+         #print "REC" + rec;      
          routers[row[0]] = rec
-      print "Total routers(s):", cursor.rowcount
+      #print "Total routers(s):", cursor.rowcount
    except Error as e:
       print(e)
  
    finally:
+      print "INFO: Total routers(s):", cursor.rowcount
       cursor.close()
+      #print "End of getRouters"
       return(routers)
 #------------------------------------------------------------------------------
 
-def generateSummary(my_routers, my_ports, my_projects, my_ipalloc, my_networks, my_subnets):
+def generateSummary(my_routers, my_ports, my_projects, my_ipalloc, my_networks, my_subnets, my_agents , my_north_ports, my_south_ports ):
+   #print "getting here"
    #print my_ports;
-   print #my_routers;
+   #print my_routers;
    print "------------------------------------------------------------------------------"
+
    for k, v in my_routers.items():
    
       routerID = k
+      #print "Generating summary for router : " + k
       name = v['name']
       snat = v['snat']
+      router_tenant_id = v['tenant_id']
+      # TO-DO: Throw an exception here
+      if router_tenant_id in my_projects:
+         router_tenant_name = my_projects[router_tenant_id]['name']
+      else:
+         router_tenant_name = 'None'
+      
       if v['gw_port_id'] is None:
          print "Router " + name + " does not have a gateway defined. Skipping"
          continue
       
       gw_port_id = v['gw_port_id']
       
-      print "GatewayPortID = " + gw_port_id
+      #print "GatewayPortID = " + gw_port_id
       snat_value = "No"
       if snat == 1:
          snat_value = "Yes"
@@ -228,31 +241,77 @@ def generateSummary(my_routers, my_ports, my_projects, my_ipalloc, my_networks, 
       ipd = my_ipalloc[gw_port_id]
       
       network_id = ipd['network_id']; subnet_id = ipd['subnet_id'];
-      print ;
+      #print ;
       #print network_id;
       north_side_config = pd['mac_address'] + ' / ' + ipd['ip_address'] + ' / ' + str(my_subnets[subnet_id]['cidr'])
       #+ ' / ' + subnet_cidr
       
       
+      active_on_id = v['active_on']
+      active_on_host = agents[active_on_id]['host']
       
+      isDistributed = "No";
+      if v['distributed'] ==1:
+         isDistributed = "Yes"
+      isHA = "No"   
+      if v['isHA'] == 1:
+         isHA = "Yes"
       
-      #nd = ;
-      
-      
-
-      
-      header_format = '{:10} : {:50}'
+      # now handle the south ports
+      south_port_id = my_south_ports[routerID]['port_id']
+      south_port = my_ports[south_port_id]
+      south_ip = my_ipalloc[south_port_id]
+      south_network_id = south_ip['network_id']
+      south_subnet_id = south_ip['subnet_id']
+      #s_network_id = spd['network_id']; s_subnet_id = spd['subnet_id'];
+      #south_side_config = spd['mac_address'] # + ' / ' + spIP['ip_address'] + ' / ' + str(my_subnets[s_subnet_id]['cidr'])
+      south_side_config = south_port['mac_address'] + ' / ' + south_ip['ip_address']
+      #print south_port
+      header_format = '{:11} : {:50}'
       print header_format.format("Name", name)
       print header_format.format("Snat", snat_value)
       print header_format.format("UUID", v['uuid'])
-      print header_format.format("Owner", "blah")
-      print header_format.format("Active On", v['active_on'])
-      #print header_format.format("Distributed", v['distributed'])
-      #print header_format.format("HA", v['ha'])
+      print header_format.format("Owner", router_tenant_name + ' [' + router_tenant_id + ']') 
+      print header_format.format("Active On", active_on_host)
+      print header_format.format("L3 Agent ID", active_on_id)
+      print header_format.format("Distributed", isDistributed)
+      print header_format.format("HA", isHA)
+      
       print header_format.format("North Side", north_side_config)
       print header_format.format("", my_networks[network_id]['name'] + ' / ' + str(my_subnets[subnet_id]['cidr']))
-      print header_format.format("", my_networks[network_id]['network_type'] + ' / ' + my_networks[network_id]['physical_network'] + ' / ' + str(my_networks[network_id]['segmentation_id']))
+      print header_format.format("", my_networks[network_id]['network_type'] + ' / ' + str(my_networks[network_id]['physical_network']) + ' / ' + str(my_networks[network_id]['segmentation_id']))
+      
+      print header_format.format("South Side", south_side_config)
+      print header_format.format("", my_networks[south_network_id]['name'] + ' / ' + str(my_subnets[south_subnet_id]['cidr']))
+      #print header_format.format("", my_networks[south_network_id]['network_type'] + ' / ' + my_networks[south_network_id]['physical_network'] + ' / ' + str(my_networks[south_network_id]['segmentation_id']))
+      print header_format.format("", my_networks[south_network_id]['network_type'] + ' / ' + str(my_networks[south_network_id]['physical_network']) + ' / ' + str(my_networks[south_network_id]['segmentation_id']))
+      
+      
       print "------------------------------------------------------------------------------"
+      
+      
+      
+   # Let's figure out the number of infra nodes
+   infraCtr = 0;
+   infras = []
+   for k, v in agents.items():
+
+      agentID = k
+   
+      host = v['host'];
+      topic = v['topic'];
+      if topic == "l3_agent":
+         a=host.split("-")
+         infraCtr = infraCtr + 1
+         #print "AgentID : " + agentID + " Host = " + a[0] + "-" + a[1] + " Topic = " + topic
+         infras.append(a[0] + "-" + a[1])
+   infras.sort()
+   infraDisplay = "," . join(infras)
+   print "There are " + str(infraCtr) + " infra node(s) : " + infraDisplay
+      
+      
+      
+      
       
 
 
@@ -263,7 +322,87 @@ def getPortDetails(ports, uuid):
 
 
 #------------------------------------------------------------------------------    
-def getRouterPorts(conn):
+def getRouterNorthPorts(conn):
+   routerPorts  = {}
+   try:
+      cursor = conn.cursor()
+      cursor.execute("SELECT router_id, port_id, port_type FROM neutron.routerports where port_type = 'network:router_gateway'")
+      #cursor.execute("SELECT router_id, port_id, port_type FROM neutron.routerports")
+      rows = cursor.fetchall()
+   
+      
+      for row in rows:
+         #print ">", row[0], "<" , ">", row[1] , "< >" , row[2] , "<"
+         rec = {}
+         rec = { 
+                  'router_id':  row[0], 
+                  'port_id' : row[1]
+               }
+         routerPorts[row[0]] = rec
+      print "Total North ports(s):", cursor.rowcount
+   except Error as e:
+      print(e)
+ 
+   finally:
+      cursor.close()
+      return(routerPorts)
+
+#------------------------------------------------------------------------------    
+def getComputeNodes(conn):
+   computeNodes  = {}
+   try:
+      cursor = conn.cursor()
+      cursor.execute("select id, host_ip, host from nova.compute_nodes")
+      rows = cursor.fetchall()
+   
+      
+      for row in rows:
+         #print ">", row[0], "<" , ">", row[1] , "< >" , row[2] , "<"
+         rec = {}
+         rec = { 
+                  'compute_id':  row[0], 
+                  'host_ip' : row[1],
+                  'hostname' : row[2]
+               }
+         computeNodes[row[0]] = rec
+      print "Total Compute Nodes(s):", cursor.rowcount
+   except Error as e:
+      print(e)
+ 
+   finally:
+      cursor.close()
+      return(computeNodes)
+
+
+#------------------------------------------------------------------------------    
+def getInstances(conn):
+   instances  = {}
+   try:
+      cursor = conn.cursor()
+      cursor.execute("select id, host, hostname, instance_type_id, vm_state, power_state from nova.instances where vm_state in ('active', 'stopped')")
+      rows = cursor.fetchall()
+   
+      
+      for row in rows:
+         #print ">", row[0], "<" , ">", row[1] , "< >" , row[2] , "<"
+         rec = {}
+         rec = { 
+                  'instance_id':  row[0], 
+                  'host' : row[1],
+                  'hostname' : row[2],
+                  'vm_state' : row[3],
+                  'power_state' : row[4]
+               }
+         instances[row[0]] = rec
+      print "Total Instance(s):", cursor.rowcount
+   except Error as e:
+      print(e)
+ 
+   finally:
+      cursor.close()
+      return(instances)
+#------------------------------------------------------------------------------    
+def getRouterSouthPorts(conn):
    routerPorts  = {}
    try:
       cursor = conn.cursor()
@@ -279,16 +418,44 @@ def getRouterPorts(conn):
                   'port_id' : row[1]
                }
          routerPorts[row[0]] = rec
-      print "Total ports(s):", cursor.rowcount
+      print "Total South ports(s):", cursor.rowcount
    except Error as e:
       print(e)
  
    finally:
       cursor.close()
-      return(routerPorts)
+      return(routerPorts)      
 
-
+#------------------------------------------------------------------------------    
+def getAgents(conn):
+   agents  = {}
+   try:
+      cursor = conn.cursor()
+      cursor.execute("SELECT id, agent_type, `binary`, topic, host, admin_state_up FROM neutron.agents")
+      rows = cursor.fetchall()
    
+      
+      for row in rows:
+         #print ">", row[0], "<" , ">", row[1] , "< >" , row[2] , "<"
+         rec = {}
+         rec = { 
+                  'uuid':  row[0], 
+                  'agent_type' : row[1], 
+                  'binary' : row[2],
+                  'topic' : row[3],
+                  'host' : row[4],
+                  'admin_state_up' : row[5]
+               }
+         agents[row[0]] = rec
+      print "Total Neutron Agent(s):", cursor.rowcount
+   except Error as e:
+      print(e)
+ 
+   finally:
+      cursor.close()
+      return(agents)
+#------------------------------------------------------------------------------
+      
    
    
 
@@ -380,13 +547,18 @@ if __name__ == '__main__':
    
    print "Collecting Information.."
    networks = getNetworks(dbc)
+   agents = getAgents(dbc)
    routers  = getRouters(dbc)
    projects = getProjects(dbc)
    ports = getPorts(dbc)
+   routerNorthPorts = getRouterNorthPorts(dbc)
+   routerSouthPorts = getRouterSouthPorts(dbc)
    domains = getDomains(dbc)
    ipalloc = getIPAllocations(dbc)
    subnets = getSubnets(dbc)
+   computes = getComputeNodes(dbc)
+   instances = getInstances(dbc)
    disconnect(dbc)
    
    # now generate summary
-   generateSummary(routers, ports, projects, ipalloc, networks, subnets)
+   generateSummary(routers, ports, projects, ipalloc, networks, subnets, agents, routerNorthPorts, routerSouthPorts)
