@@ -1,0 +1,359 @@
+#!/usr/bin/perl
+#------------------------------------------------------------------------------
+# INFO / Change Log
+#------------------------------------------------------------------------------
+# v1.0 - 12/22/2017 Luke Yildirim @ Rackspace
+# This script does handle long time running tcpdumps on F5.
+# It does check few things.
+# - Check to see if the unit we are running from is ACTIVE
+# - Checks disk space, if utilization is over 80%, it will kill all tcpdumps
+# - It rotates the CAP files so that we only keep x hours of data defined in
+# the conf file.
+# - if no running tcpdumps found with the defined filter, it will initiate it.
+# so the idea is to let script manage tcpdumps, not start it by manually.
+# It logs to /root/logs by default.
+# 
+#------------------------------------------------------------------------------
+# Modules used
+#------------------------------------------------------------------------------
+use Data::Dumper;
+use warnings;
+use strict;
+use File::Find;
+#------------------------------------------------------------------------------
+# Start of script
+#------------------------------------------------------------------------------
+# First read the conf file and start our log file.
+our %globals;
+readConf();
+startLog();
+
+# Make sure this is the active device and enough disk space is available
+checkActive();
+
+# This will kill all tcpdump jobs and EXIT program if diskspace is overutilized.
+checkDiskSpace(); 
+
+# Make sure the destination directory for PCAP files is present.
+checkOutDir();
+
+# Make sure TCPDUMP is running
+checkTCPDUMP();
+
+# Take care of PCAP file rotation
+rotateFiles();
+exit;
+#------------------------------------------------------------------------------
+# End of MAIN
+#------------------------------------------------------------------------------
+# Subroutines
+#------------------------------------------------------------------------------
+sub checkActive()
+{
+   my $isActive = 0;
+   open (CMD, "/usr/bin/tmsh show sys failover |");
+   while (<CMD>)
+   {
+      chomp;
+      if (/Failover active/)
+      {
+         logger("It's verified that this is the active unit");
+         $isActive =1;
+      }
+   }
+   close CMD;
+   if ($isActive != 1 )
+   {
+      logger("This is not the active unit.");
+      logger("Exiting");
+      
+   }
+   return;
+}
+
+
+
+sub checkDiskSpace
+{
+   my $diskThreshold = 80;
+   logger("Making sure we are not filling up the disk on " . $globals{'outdir'});
+   open (CMD, "/bin/df -h ". $globals{'outdir'} . " |");
+   my $diskPercentFull = 100;
+   while (<CMD>)
+   {
+      chomp;
+      next if (/^Filesystem/);
+      $_ = trim($_);
+      my @a = split(/\s+/);
+      if ( scalar(@a) == 5 )
+      {
+         $diskPercentFull = $a[3];
+      }
+   }
+   close CMD;
+   if ($diskPercentFull =~ m/\%/)
+   {
+      $diskPercentFull =~ s/\%//g;
+   }
+   logger("DiskPercent Full      : $diskPercentFull");
+   logger("DiskPercent Threshold : $diskThreshold");
+   if ($diskPercentFull > $diskThreshold )
+   {
+      logger("Disk is more than $diskThreshold percent full.");
+      logger("Stopping all tcpdump processes.");
+      killAll();
+      exit;
+   }
+}
+
+
+sub killAll
+{
+   my $cmd = "ps -ef | grep tcpdump | grep -v grep";
+	my $ctr=0;
+	open (CMD, "$cmd |");
+	while (<CMD>)
+	{
+		chomp;
+      #print $_, "\n";
+		my (@a) = split(/\s+/);
+      my $pid = $a[1];
+		my $killCmd = "/bin/kill $pid";
+      logger("Killing existing tcpdump [$killCmd]");
+      logger("running tcpdump $_");
+      system($killCmd);
+   }
+   close CMD;
+   return;
+   
+}
+
+sub trim
+{
+   my ($s) = @_;
+   $s =~ s/^\s+//g;
+   $s =~ s/\s+%//g;
+   return($s); 
+}
+
+
+
+
+sub logger 
+{
+   my ($msg) =@_;
+   print LOG "INFO::". scalar(localtime(time)) . "::$msg\n";
+   print "INFO: $msg\n";
+   return;
+}
+
+
+sub startLog
+{
+   my ($g) = @_;
+   my $logDir = $globals{'log-dir'};
+   if (! -d $logDir)
+   {
+      print "INFO: Log Directory [$logDir] doesn't exist.\n";
+      createRecursiveDir($logDir);
+   }
+   my $logFile = $logDir . "/" . 
+                  getLogFileName(
+                                 $logDir, 
+                                 $globals{'log-file'}, 
+                                 $globals{'dated-logs'}, 
+                                 $globals{'log-retention'}
+                                 );
+  
+   open (LOG, ">>$logFile") or die "ERROR: Cannot open [$logFile] in append mode.\n";
+   $globals{'log-open'} = 1;
+   print "INFO: log file is $logFile\n";
+   return($logFile);
+}
+
+
+sub getLogFileName
+{
+   my($logDir, $logFile, $datedLogs, $logRetention) = @_;
+   #----------------------------------------------------------------------------
+   # Determine how the application is launched 
+   #----------------------------------------------------------------------------
+   my ($today,$todayFullTime) = getnow();
+   my ($fName, $ext) = split(/\./, $logFile);
+   my $mylog;
+   if (lc($datedLogs eq "true" ))
+   { 
+      $mylog   = "$fName-$today.$ext";
+   }
+   
+   else                          
+   { 
+      $mylog   = "$fName.$ext";  
+   }
+  return($mylog);
+}
+
+
+sub getnow
+{
+    my ($sec, $min, $hour, $mday, $mon, $year, $wday, $ydat, $isdst) = localtime();
+    my $year1 = sprintf "%02d", $year + 1900;
+    my $year2 = sprintf "%02d", $year + 1900;
+    $mon = sprintf "%02d", $mon +1;
+    my $day = sprintf "%02d", $mday;
+    $min = sprintf "%02d", $min;
+    $hour = sprintf "%02d", $hour;
+    $sec = sprintf "%02d", $sec;
+    my $onlydate = "$year1$mon$day";
+    my $fulldate = "$year2$mon$day$hour$min$sec";
+    my $fulldate2 = "$year2-$mon$-day$-hour$min$sec";
+    return ($onlydate, $fulldate);
+}
+
+
+
+
+sub createRecursiveDir
+{
+	my ($logDir) = @_;
+   print "INFO: Attempting to create log Directory [$logDir]\n";
+   $logDir =~ s/^\///g;
+	my @dir 		= split(/\//, $logDir);
+   
+	foreach my $d (@dir)
+	{
+		my $dir .= "/" . $d;
+		if (! -d $dir) 
+		{ 
+			print "INFO: Directory [$dir] doesn't exist\n";
+         if (! mkdir($dir)) 
+			{  
+				print "ERROR: An error occured while trying to create directory [$logDir]\n".
+                  "ERROR: Please make sure you have permissions to do so.\n";
+            exit;
+			} 
+		}
+   }
+   print "INFO: Directory [$logDir] was created successfully.\n";
+   return;
+}
+
+
+sub readConf
+{
+	if ( ! -f "/root/scripts/edgar.conf" )
+	{
+		print "Configuration file edgar.conf is NOT found\n";
+		exit;
+	}
+
+	open (F, "/root/scripts/edgar.conf");
+	while (<F>)
+	{
+		chomp;
+		next if (/^\#/);
+		next if ( length($_) < 2 );
+		my ($k, $v) = split(/\=/);
+		$globals{$k} = $v;
+
+	}
+	close F;
+	#print Dumper(%globals);
+	return;
+}
+
+sub checkOutDir
+{
+	my $outDir = $globals{'outdir'};
+	if ( ! -d $outDir )
+	{
+		logger("Output Directory $outDir doesn't exist.");
+		logger("Please create manually by 'mkdir -p $outDir`");
+		exit;
+
+	}
+	else
+	{
+		logger("Script will save tcpdumps to $outDir");
+	}
+	
+
+
+}
+
+sub checkTCPDUMP
+{
+	
+	logger("Checking to see if tcpdump is running");
+	my $cmd = "ps -ef | grep tcpdump | grep -v grep";
+   my $rotation = $globals{'rotate'} * 60;
+   my $filter = $globals{'filter'};
+	my $cmd2 = "/usr/sbin/tcpdump -nni any -w /shared/tmp/captures/myCapture-%F-%H%M%S.cap -G $rotation -Z root -e \"$filter\"";
+   
+
+	my $ctr=0;
+	open (CMD, "$cmd |");
+	while (<CMD>)
+	{
+		chomp;
+		my (@a) = split(/\s+/);
+		shift(@a); shift(@a); shift(@a); shift(@a);
+		shift(@a); shift(@a); shift(@a); 
+		my $runningCMD = join(" ", @a);
+		#print $runningCMD, "\n";
+		#print $cmd2, "\n";
+		$cmd2 =~ s/\"//g;
+		if ($runningCMD eq $cmd2)
+		{
+			logger("Desired TCPdump is already running");
+		}
+
+		#print $_, "\n";
+		$ctr++;
+	}
+	close CMD;
+
+	if ( $ctr ==0 )
+	{
+		logger("Tcpdump is not running.");
+		$cmd = "/usr/sbin/tcpdump -nni any -w /shared/tmp/captures/myCapture-%F-%H%M%S.cap -G $rotation -Z root -e \"$filter\"";
+		system("$cmd &");
+		logger("Firing up tcpdump [$cmd]");
+	}
+
+}
+
+
+
+sub rotateFiles
+{
+	my $dir = $globals{'outdir'};
+	my $retain = $globals{'retain'}; #how many hours old
+	my $now = time(); # get current time
+	my $AGE = $retain * 3600; # age in seconds
+	logger("Looking for capture files older than $retain hours old");
+
+
+	opendir DIR , $dir;
+	my @f = grep { $_ ne '.' && $_ ne '..' } readdir DIR;
+	close DIR;
+	logger("There are " . scalar(@f) . " files in $dir");
+	foreach (@f)
+	{
+		my $file = $dir . "/" . $_;
+		#my $lastMod = (stat ($file))[9];
+		#$lastMod = scalar localtime($lastMod);
+		#print "Deleting file $file [$lastMod]\n";
+		#unlink $file;
+		my @stats = stat($file); #stat[9] is mtime - last modify time
+		my $delta = $now-$stats[9];
+		#print "INFO: $file Now: $now, mtime=" . $stats[9] . " [$AGE] [$delta]\n";
+		if ($now-$stats[9] > $AGE) 
+		{
+			logger("Deleting old capture file $file");
+			unlink $file;
+		}
+	}
+}
+
+
