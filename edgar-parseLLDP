@@ -90,7 +90,7 @@ sub installLLDPD
 {
    print "INFO: Installing LLDPD package\n";
    system("/usr/bin/apt -y install lldpd");
-   system("service start lldpd");
+   system("service lldpd start");
    return;
 }
 
