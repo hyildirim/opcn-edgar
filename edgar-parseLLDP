@@ -102,7 +102,7 @@ sub checkLLDPStatus
    while (<F>)
    {
       chomp;
-      if (/stop/ || /waiting/)
+      if (/stop/ || /waiting/ || /Stopped/)
       {
          $serviceStopped = 1;
          print $_, "\n";
