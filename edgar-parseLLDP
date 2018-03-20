@@ -89,7 +89,8 @@ sub parseLLDP
 sub installLLDPD
 {
    print "INFO: Installing LLDPD package\n";
-   system("/usr/bin/apt install lldpd");
+   system("/usr/bin/apt -y install lldpd");
+   system("service start lldpd");
    return;
 }
 
