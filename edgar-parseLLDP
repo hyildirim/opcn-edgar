@@ -97,6 +97,9 @@ sub installLLDPD
 sub checkLLDPStatus
 {
    print "INFO: Make sure service is started\n";
+   system("/usr/sbin/service lldpd start");
+   sleep 40;
+   return;
    open (F, "/usr/sbin/service lldpd status 2>&1 |");
    $serviceStopped = 0;
    while (<F>)
