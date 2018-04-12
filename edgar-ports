@@ -102,7 +102,7 @@ foreach $i (sort keys %interfaces)
                 while (<F>)
                 {
                         chomp;
-                        if ( /Subtype Interface Name/ )
+                        if ( /Port Description TLV/ )
                         {
                                 my ($j, $int) = split(/:\s+/);
                                 $interfaces{$i}{'port'} = $int;
