@@ -142,3 +142,12 @@ foreach $b (sort keys %bonds)
         }
         print $line;
 }
+
+# now write the summary
+open (F, ">/tmp/interfaceSummary.txt");
+foreach $i ( sort keys %interfaces )
+{
+   print join ("::",  $interfaces{$i}{'switch'}, $interfaces{$i}{'port'}, $interfaces{$i}{'bond'}, $i) . "\n";
+}
+
+
