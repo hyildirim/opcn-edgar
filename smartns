@@ -1,0 +1,96 @@
+#!/usr/bin/python
+import sys,os
+import subprocess
+import re
+import platform
+
+def getHostname():
+        hostname=platform.node()
+
+        try:
+                found = re.search('infra\d+', hostname).group(0)
+        except AttributeError:
+                found = ''
+
+        return(found)
+
+
+
+
+
+output = subprocess.Popen("ip netns list", stdout=subprocess.PIPE,stderr=subprocess.PIPE, shell=True)
+routers=[]
+dhcp=[]
+allns=[]
+
+#make sure output directory exists
+WORK_DIR="/root/edgar"
+
+if os.path.exists(WORK_DIR) == False:
+        os.mkdir(WORK_DIR)
+
+
+myHost = getHostname()
+
+
+b = output.stdout.read()
+for row in b.split("\n"):
+        row = re.sub('\(id: \d+\)','',row)
+        row = re.sub('\s+','',row)
+        if 'qrouter-' in row:
+                routers.append(row); allns.append(row);
+                file="/root/edgar/" + row + ".rc"
+                f=open(file, "w")
+                f.write("source ~/.bashrc\n")
+                if len(myHost) > 0:
+                        f.write("PS1=\"\\[\\033[1;34m\\][ROUTER][" + myHost + "][" + row + "]$\[\\033[0m\\] \"\n")
+                else:
+                        f.write("PS1=\"\\[\\033[1;34m\\][ROUTER][" + row + "]$\[\\033[0m\\] \"\n")
+                f.close()
+        if 'qdhcp-' in row:
+                dhcp.append(row); allns.append(row);
+                file="/root/edgar/" + row + ".rc"
+                f=open(file, "w")
+                f.write("source ~/.bashrc\n")
+                if len(myHost) > 0:
+                        f.write("PS1=\"\\[\\033[1;31m\\][DHCP][" + myHost + "]["+ row + "]$\[\\033[0m\\] \"\n")
+                else:
+                        f.write("PS1=\"\\[\\033[1;31m\\][DHCP][" + row + "]$\[\\033[0m\\] \"\n")
+                f.close()
+
+if len(sys.argv) > 1:
+        namespace=str(sys.argv[1])
+        # now validate the namespace
+        if namespace in allns:
+                os.system("ip netns exec " + namespace + " bash --rcfile /root/edgar/" + namespace + ".rc -i")
+        else:
+                print "Namespace you provided : " + namespace + " is not valid"
+                sys.exit()
+else:
+        # let's present the list of namespaces to the user
+        ctr=1
+        crossCheck={}
+        if len(routers) > 0:
+                print "****** Router Namespaces *************************"
+                for r in routers:
+                        print str(ctr) + ". " + r
+                        crossCheck[ctr] = r
+                        ctr = ctr + 1
+
+        if len(dhcp) > 0:
+                print "****** DHCP Namespaces ***************************"
+                for d in dhcp:
+                        print str(ctr) + ". " + d
+                        crossCheck[ctr]  = d
+                        ctr = ctr + 1
+
+        isConfirmed = 0
+        while isConfirmed == 0:
+                userSelection = input("Make your selection [1-" + str(ctr - 1) + "] :")
+                if userSelection > 0 and userSelection < ctr:
+                        isConfirmed=1
+
+        #print "User Selected "  + str(userSelection)
+        #print "The correspondng namespace is " + crossCheck[userSelection]
+        namespace=crossCheck[userSelection]
+        os.system("ip netns exec " + namespace + " bash --rcfile /root/edgar/" + namespace + ".rc -i")
