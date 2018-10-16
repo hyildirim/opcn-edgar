@@ -101,7 +101,7 @@ if (choice == 3):
 if (choice == 4):
    ob.selectAgents()   
 #print "Sub Selection: " + str(ob.userSelectionSub)   
-connCmd = "ssh " + str(ob.userSelectionSub)
+connCmd = "ssh -o StrictHostKeyChecking=no " + str(ob.userSelectionSub)
 #print connCmd
 os.system(connCmd)
 sys.exit()
