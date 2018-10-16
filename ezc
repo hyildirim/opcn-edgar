@@ -1,0 +1,108 @@
+#!/usr/bin/python
+import sys,os
+import subprocess
+import re
+import platform
+import random
+
+
+class EdgarSelector:
+
+   def menu_prompt(self):
+         ctr=1
+         print str(ctr) + ". Connect to any Utility Container"; ctr = ctr +1
+         print str(ctr) + ". Connect to any Neutron Agents Container"; ctr = ctr +1
+         print str(ctr) + ". Connect to a specific Utility Container"; ctr = ctr +1
+         print str(ctr) + ". Connect to a specific Neutron Agents Container"; ctr = ctr +1
+         
+         isConfirmed = 0
+         while isConfirmed == 0:
+            userSelection = input("Make your selection [1-" + str(ctr - 1) + "] :")
+            if userSelection > 0 and userSelection < ctr:
+                    isConfirmed=1
+         self.userSelection = userSelection
+         
+   def selectUtil(self):
+      ctr=1
+      selectionDict=dict()
+      for cont in self.u:
+         print str(ctr) + ". " + cont; selectionDict[ctr] = self.u[cont]; ctr = ctr +1
+      isConfirmed = 0
+      while isConfirmed == 0:
+         userSelection = input("Make your selection [1-" + str(ctr - 1) + "] :")
+         if userSelection > 0 and userSelection < ctr:
+                 isConfirmed=1
+      self.userSelectionSub = selectionDict[userSelection]
+
+   def selectAgents(self):
+      selectionDict=dict()
+      ctr=1
+      for cont in self.a:
+         print str(ctr) + ". " + cont; selectionDict[ctr] = self.a[cont]; ctr = ctr +1
+      isConfirmed = 0
+      while isConfirmed == 0:
+         userSelection = input("Make your selection [1-" + str(ctr - 1) + "] :")
+         if userSelection > 0 and userSelection < ctr:
+                 isConfirmed=1
+      self.userSelectionSub = selectionDict[userSelection]
+      
+   def selectRandomUtil(self):
+      self.userSelectionSub = random.choice(self.u.keys())
+   def selectRandomAgents(self):
+      self.userSelectionSub = random.choice(self.a.keys())   
+      
+   
+   
+   def __init__(self):
+      #print "DEBUG: Initializing Class"
+      # let's define our dictionaries we are going to build.
+      agents = dict()
+      utils = dict()
+      
+      # let's read the hosts file and populate our dictionaries
+      hosts_file = open('/etc/hosts', 'r')
+      regex = re.compile(r'utility-container')
+      regex2 = re.compile(r'neutron-agents-container')
+      for line in hosts_file:
+         if regex.findall(line):
+            utility_containers = re.split('\s+', line)
+            utils[utility_containers[1]] = utility_containers[0]
+         
+         if regex2.findall(line):
+            agents_containers = re.split('\s+', line)
+            agents[agents_containers[1]] = agents_containers[0]
+      self.u = utils
+      self.a = agents
+   
+      
+   
+   
+   
+   def func(self):
+      print "DEBUG: Welcome to Edgar Container selector"
+      for i in self.a:
+         print "Agent : " + str(i)
+      for j in self.u:
+        print "Util : " + str(j)   
+  
+#--------------------------------------------------------------------------------------
+# End of class
+#--------------------------------------------------------------------------------------   
+
+ob = EdgarSelector()
+ob.menu_prompt();
+choice = ob.userSelection
+if (choice == 1):
+   ob.selectRandomUtil()
+if (choice == 2):
+   ob.selectRandomAgents()   
+if (choice == 3):
+   ob.selectUtil()
+if (choice == 4):
+   ob.selectAgents()   
+#print "Sub Selection: " + str(ob.userSelectionSub)   
+connCmd = "ssh " + str(ob.userSelectionSub)
+#print connCmd
+os.system(connCmd)
+sys.exit()
+
