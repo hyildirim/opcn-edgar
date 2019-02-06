@@ -1,0 +1,84 @@
+# First get agents container lists from hosts file
+$outDir = "/home/rpcn/out";
+
+open (F, "/etc/hosts");
+while(<F>)
+{
+   chomp;
+   if (/agents_container/)
+   {
+      my(@a) = split(/\s+/);
+      $nac = $a[1];
+      push(@agents, $nac);
+   }
+}
+system("rm -rf /home/rpcn/out");
+print join("\n", @agents), "\n";
+if (! -d "/home/rpcn/out") { mkdir("/home/rpcn/out"); }
+# Now collect the keepalived files from each.
+foreach $a (@agents)
+{
+   if (! -d "$outDir/$a" ) { mkdir("$outDir/$a"); }
+   $cmd = "rsync -a $a:/var/lib/neutron/ha_confs $outDir/$a";
+   system($cmd);
+}
+
+# now go thru each directory and get state
+foreach $a (@agents)
+{
+   $startDir = $outDir . "/$a/ha_confs";
+   opendir(DIR, $startDir) or die "$startDir is invalid\n";
+   while (my $file = readdir(DIR))
+   {
+      if  ( $file =~ m/^\./ || $file =~ m/^\.\./) { next; }
+      if (-d $startDir . "/" . $file )
+      {
+         
+         $routers{$file}{$a} =   $startDir . "/" . $file . "/state";
+         #push(@{$routers{$file}{'state'}},  "N/A");
+      }
+      $routerSummary[$a] = 0;
+   }
+   closedir(DIR);
+}
+
+foreach my $r (keys %routers)
+{
+  #print "Checking Status of Router $r\n";
+  foreach $a (@agents)
+  {
+      $routerStatus = "N/A";
+      if (-f $routers{$r}{$a})
+      {
+         $routerStatus = readStatus($routers{$r}{$a});
+         print "On agent [$a], the router  [$r] is $routerStatus\n";
+         if ($routerStatus eq "master")
+         {
+            $routerSummary{$a} = $routerSummary{$a} + 1;
+         }
+      }
+  }
+}
+
+
+# now the summary
+print "-" x 68 . "\n";
+print "Router Summary\n";
+print "-" x 68 . "\n";
+foreach (keys %routerSummary)
+{
+   printf ("%50s : %5s\n", $_, $routerSummary{$_});
+   
+}
+
+sub readStatus
+{
+   my ($f) = @_;
+   open (F, $f);
+   while(<F>)
+   {
+      chomp; $status = $_;
+   }
+   close F;
+   return($status);
+}
