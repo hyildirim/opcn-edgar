@@ -1,3 +1,4 @@
+#!/usr/bin/perl
 # First get agents container lists from hosts file
 $outDir = "/home/rpcn/out";
 
