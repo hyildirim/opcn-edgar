@@ -1,0 +1,152 @@
+#!/usr/bin/perl
+use Time::Piece;
+use Data::Dumper;
+our $baseDir = "/root/edgar";
+our $tempDir = $baseDir . "/temp";
+our $appDir  = $baseDir . "/interfaces";
+   
+my @interfaces = ("em49", "em50", "p1p1", "p1p2");
+my $t = localtime;
+
+my %stats;
+createDirs();
+#captureEthTool(@interfaces);
+parseStatistics(\@interfaces, \%stats);
+writeStatistics(\%stats);
+exit;
+
+
+sub createDirs
+{
+   my ( $baseDir ) = @_;
+   if (! -d $baseDir )
+   {
+      mkdir($baseDir);
+   }
+   if (! -d $appDir )
+   {
+      mkdir($appDir);
+   }
+   if (! -d $tempDir )
+   {
+      mkdir($tempDir);
+   }
+   return;
+
+}
+sub writeStatistics
+{
+	my($stats) = @_;
+	my $t = localtime;
+	my $outFile = $appDir . "/" . $t->strftime("%Y-%m-%d") . "-interface-stats.txt";
+   my $lastValuesFile = $tempDir . "/edgar-interfaces-last.txt";
+	my %lastStats;
+   my $format = "%-20s: %-6s: %-12s: %-6s: %-12s: %-6s\n";
+   # First read the last values and store in memory to calculate deltas
+   open (S, "$lastValuesFile");
+   while(<S>)
+   {
+      chomp;
+      my (@a) = split(/::/);
+      $lastStats{$a[0]}{'rx_dropped'} = $a[1];
+      $lastStats{$a[0]}{'rx_missed_errors'} = $a[2];
+   }
+   close S;
+   my $newFile = 0;
+   # if file doesn't exist create the file with headers
+   if (! -f $outFile)
+   {
+      open(F, ">$outFile");
+      $newFile = 1;
+      print F sprintf($format, "Timestamp", "Int", "RX Dropped" , "Delta", "RX Missed", "Delta");
+   }
+   else
+   {
+      open(F, ">>$outFile");
+   }
+   
+	foreach my $s ( sort keys %{$stats} ) 
+	{
+		$deltaRXDropped = $stats{$s}{'rx_dropped'} - $lastStats{$s}{'rx_dropped'};
+      $deltaRXMissed  = $stats{$s}{'rx_missed_errors'} - $lastStats{$s}{'rx_missed_errors'};
+      if ($newFile == 1)
+      {
+         $deltaRXDropped = "0";
+         $deltaRXMissed = "0";
+      }
+      print F sprintf($format, 
+                        $t->datetime, 
+                        $s, 
+                        $stats{$s}{'rx_dropped'} , 
+                        $deltaRXDropped,
+                        $$stats{$s}{'rx_missed_errors'}, 
+                        $deltaRXMissed);
+
+	}
+   close F;
+   
+   
+   #finally write the last values so that we can delta each
+   
+  
+   open (L, ">$lastValuesFile");
+   foreach my $s ( sort keys %{$stats} ) 
+	{
+		print L join("::", 
+                           $s, 
+                           $stats{$s}{'rx_dropped'}, 
+                           $$stats{$s}{'rx_missed_errors'})."\n";
+	}
+
+}
+#-------------------------------------------------------------------------------
+sub parseValue
+{
+	my ($s) = @_;
+	my @a = split(/:/);
+	my $value = pop(@a);
+	$value =~ s/\s+//g;
+	return($value);
+
+}
+#-------------------------------------------------------------------------------
+sub parseStatistics
+{
+	my($a, $h) = @_;
+	foreach my $nic ( @{$a} )
+	{
+		my $file = "$tempDir/$nic.txt";
+		open (F, $file);
+		while(<F>)
+		{
+			chomp;
+			$line = $_; $line =~ s/\s+//g;
+			if ( /rx_dropped/)
+			{
+				$rx_dropped = parseValue($line);
+				$$h{$nic}{'rx_dropped'} = parseValue($line);
+				#print "[$nic]" . "::" . parseValue($line) , "::$line\n";
+			}
+			if ( /rx_missed_errors:/)
+			{
+				$rx_missed_errors = parseValue($line);
+				$$h{$nic}{'rx_missed_errors'} = parseValue($line);
+			}
+		}
+
+		close F;
+   }
+   return;
+}
+#-------------------------------------------------------------------------------
+sub captureEthTool 
+{
+	my (@a) = @_;
+	foreach (@a)
+	{
+		print $_, "\n";
+		system ("/sbin/ethtool -S $_ > $tempDir/$_.txt");
+	}
+   return;
+}
+#-------------------------------------------------------------------------------
