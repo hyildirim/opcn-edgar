@@ -1,5 +1,6 @@
 #!/usr/bin/perl
-
+use Sys::Hostname;
+my $myHostName = hostname;
 my %bonds; my %interfaces;
 my $line = "-" x 79 . "\n";
 
@@ -47,8 +48,11 @@ sub summarizeData
       #print $i, "\n";
       my $sw = $$interfaces{$i}{'switch'};
       my $swport = $$interfaces{$i}{'port'};
-      #print "INFO: Interface $i is connected to Switch [$sw] port [$swport]\n";
-      print S join("::", $sw, $swport, $$interfaces{$i}{'bond'}, $i) . "\n";
+      my $speed = $$interfaces{$i}{'speed'};
+      my $linkStatus = $$interfaces{$i}{'link'};
+	#print "INFO: Interface $i is connected to Switch [$sw] port [$swport]\n";
+      my $myHostName = hostname;
+      print S join("::", $myHostName, $sw, $swport, $$interfaces{$i}{'bond'}, $i, $speed, $linkStatus) . "\n";
    }
    close S;
    return;
@@ -59,7 +63,10 @@ sub parseLLDP
 {
    my ($interfaces) = @_;
    system("/usr/sbin/lldpcli show neighbors > /tmp/lldpInfo.txt");
+   # Create a hash of interfaces so we only look for interfaces that are part of a bond
+   my %_interfaces = %{$interfaces};
    
+ 
    print "INFO: Parsing LLDPD output\n";
    open (L, "/tmp/lldpInfo.txt");
    while(<L>)
@@ -70,11 +77,18 @@ sub parseLLDP
          my $line = $_; $line =~ s/Interface:\s+//g; my @a = split(/,/, $line);
          $lastInterface = $a[0]; $$interfaces{$lastInterface}{'name'} = $lastInterface; next;
       }
-      if (/PortID:/)
+      #if (/PortID:/)
+      #{
+      #   my $line = $_; $line =~ s/\s+PortID:\s+ifname\s+//g;      
+      #   $$interfaces{$lastInterface}{'port'} = $line; next;
+      #}
+
+      if (/PortDescr:/)
       {
-         my $line = $_; $line =~ s/\s+PortID:\s+ifname\s+//g;      
+         my $line = $_; $line =~ s/\s+PortDescr:\s+//g;      
          $$interfaces{$lastInterface}{'port'} = $line; next;
-      }
+
+}
       if (/SysName:/)
       {
          my $line = $_; $line =~ s/\s+SysName:\s+//g;
@@ -82,7 +96,19 @@ sub parseLLDP
       }
    }
    close L;
-   
+   # Remove the interface if not in bond
+   foreach my $int (keys %{$interfaces})
+   {
+	if ( ! $_interfaces{$int} )
+	{
+		print "INFO: Interface $int is not part of a bond. Removing it from summary\n";
+		delete($$interfaces{$int});
+
+	}
+
+   }
+
+
    return;
 }
 
@@ -207,12 +233,18 @@ sub checkInterfaces
                    {
                          my ($j, $link) = split(/:\s/);
                          print "INFO: Link status for $int : $link\n";
-                         if ( $link eq "no" ) { $link = "**** NO ****" ; }
+                         if ( $link eq "no" ) { $link = "NO" ; }
+			 if ( $link eq "yes" ) { $link = "YES"; }
                          $$interfaces{$int}{'link'} = $link;
                    }
+		  if (/Speed:/)
+		 {
+			my($k,$speed) = split(/:\s/);
+			print "INFO: Speed for $int : $speed\n";
+			$$interfaces{$int}{'speed'} = $speed;
+		}
            }
            close F;
    }
 }
-
 
