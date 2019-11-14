@@ -8,7 +8,8 @@ I use this script to collect LLDP information from each host.
 
 - Plant the script on INFRA01 node (where ansible is used for deployment). 
    ```
-   wget <link for script RAW URL)
+   cd /root
+   wget https://raw.githubusercontent.com/hyildirim/opcn-edgar/master/edgar-parseLLDP
    chmod +x edgar-parseLLDP
    ```
    
