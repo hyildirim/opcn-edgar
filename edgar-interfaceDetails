@@ -1,0 +1,138 @@
+use Sys::Hostname;
+my $myHostName = hostname;
+my %bonds; my %interfaces;
+my $line = "-" x 79 . "\n";
+
+
+
+
+getBonds(\%bonds);
+checkBonds(\%bonds, \%interfaces);
+checkInterfaces(\%interfaces);
+summarizeData(\%bonds,\%interfaces);
+exit;
+
+
+sub summarizeData
+{
+   my ($bonds, $interfaces) = @_;
+   print "INFO: Interface Summary is saved to /tmp/interfaceSummary.txt\n";
+   open (S, ">/tmp/interfaceSummary.txt");
+   #my $fmtLine = "-" x 79 . "\n";
+   #print $fmtLine; print "Interface Summary\n"; print $fmtLine;
+   foreach my $i ( sort keys %{$interfaces})
+   {
+      #print $i, "\n";
+      my $sw = $$interfaces{$i}{'switch'};
+      my $swport = $$interfaces{$i}{'port'};
+      my $speed = $$interfaces{$i}{'speed'};
+      my $linkStatus = $$interfaces{$i}{'link'};
+		  my $bond = $$interfaces{$i}{'bond'};
+			my $bondMode = $$bonds{$bond}{'mode'};
+
+	    if ($bondMode eq "fault-tolerance (active-backup)") { $bondMode = "active-backup"; }
+			my $intBond = "passive";
+			if ($bonds{$bond}{'activeNic'} eq $i) { $intBond = "active"; }
+	#print "INFO: Interface $i is connected to Switch [$sw] port [$swport]\n";
+      my $myHostName = hostname;
+      print S join("::", $myHostName, $$interfaces{$i}{'bond'}, $i, $speed, $linkStatus, $bondMode, $intBond) . "\n";
+   }
+   close S;
+   return;
+}
+
+
+
+
+sub getBonds
+{
+   my ($bonds) = @_;
+   print "INFO: Reading /etc/network/interfaces to get a list of bond(s)\n";
+   open (F, "/etc/network/interfaces");
+   while (<F>)
+   {
+      chomp;
+      if (/^iface bond\d inet/)
+      {
+         my (@a) = split(/\s+/);
+         $bond = $a[1];
+         $$bonds{$bond}{'name'} = $bond;
+         print "INFO: Bond $bond was found\n";
+      }
+   
+   }
+   close F;
+   
+}
+
+
+sub checkBonds
+{
+   my ($bonds, $interfaces) = @_;
+   print "INFO: Checking status of each bond\n";
+   foreach $bond ( sort keys %{$bonds})
+   {
+           print "INFO: Reading status of $bond\n";
+           # Now read the bond status
+           open (F, "/proc/net/bonding/$bond");
+           while(<F>)
+           {
+              chomp;
+              if (/Slave Interface/)
+              {
+                   my ($j, $int) = split(/:\s/);
+                   print "INFO: Interface $int is in bond $bond\n";
+                   push(@{$bonds{$bond}{'interfaces'}}, $int);
+                   $$interfaces{$int}{'bond'} = $bond;
+              }
+           if (/Bonding Mode:/)
+           {
+                   my ($k, $bondMode) = split(/:\s/);
+                   $bonds{$bond}{'mode'} = $bondMode;
+									 print "INFO: Bonding mode for $bond is $bondMode\n";
+           }
+						  if (/Currently Active Slave/)
+              {
+								 my ($m, $activeNic) = split(/:\s/);
+								 print "INFO [$activeNic] is the active NIC in bond [$bond]\n";
+								 $bonds{$bond}{'activeNic'} = $activeNic;
+				
+						  }
+           }
+           close F;
+   }
+   return;
+}
+
+
+
+sub checkInterfaces
+{
+   my ($interfaces) = @_;
+   # Now use ethtool to see the link status
+   foreach $int (sort keys %interfaces)
+   {
+           $$interfaces{$int}{'link'} = "N/A";
+           print "INFO: Checking status of $int using ethtool\n";
+           open (F, "ethtool $int |");
+           while(<F>)
+           {
+                   chomp;
+                   if (/Link detected:/)
+                   {
+                         my ($j, $link) = split(/:\s/);
+                         print "INFO: Link status for $int : $link\n";
+                         if ( $link eq "no" ) { $link = "NO" ; }
+			 if ( $link eq "yes" ) { $link = "YES"; }
+                         $$interfaces{$int}{'link'} = $link;
+                   }
+		  if (/Speed:/)
+		 {
+			my($k,$speed) = split(/:\s/);
+			print "INFO: Speed for $int : $speed\n";
+			$$interfaces{$int}{'speed'} = $speed;
+		}
+           }
+           close F;
+   }
+}
