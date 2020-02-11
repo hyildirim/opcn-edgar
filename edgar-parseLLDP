@@ -77,18 +77,18 @@ sub parseLLDP
          my $line = $_; $line =~ s/Interface:\s+//g; my @a = split(/,/, $line);
          $lastInterface = $a[0]; $$interfaces{$lastInterface}{'name'} = $lastInterface; next;
       }
-      #if (/PortID:/)
-      #{
-      #   my $line = $_; $line =~ s/\s+PortID:\s+ifname\s+//g;      
-      #   $$interfaces{$lastInterface}{'port'} = $line; next;
-      #}
-
-      if (/PortDescr:/)
+      if (/PortID:/)
       {
-         my $line = $_; $line =~ s/\s+PortDescr:\s+//g;      
+         my $line = $_; $line =~ s/\s+PortID:\s+ifname\s+//g;      
          $$interfaces{$lastInterface}{'port'} = $line; next;
+      }
 
-}
+      #if (/PortDescr:/)
+      #{
+      #   my $line = $_; $line =~ s/\s+PortDescr:\s+//g;      
+      #   $$interfaces{$lastInterface}{'port'} = $line; next;
+
+      #}
       if (/SysName:/)
       {
          my $line = $_; $line =~ s/\s+SysName:\s+//g;
