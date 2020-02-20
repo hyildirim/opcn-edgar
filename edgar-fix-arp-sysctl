@@ -1,0 +1,35 @@
+#!/usr/bin/perl
+use warnings;
+use strict;
+
+my @routerList;
+my $ipCMD = "/sbin/ip";
+my $cmd = $ipCMD . " netns";
+
+# First look at all namespaces and filter out the router ones
+# and push them into an array
+open (CMD, "$cmd |");
+while (<CMD>)
+{
+	chomp;
+	if (/^qrouter/)
+	{
+		my $line = $_;
+		$line =~ s/\s+\(id: \d+\)//g;
+		push(@routerList, $line);
+	}	
+}
+close CMD;
+
+
+# Now we have the router list, set the arp_ignore and arp_announce sysctl 
+# values blindly
+
+
+foreach my $router (@routerList)
+{
+	my $cmd1 = $ipCMD . " netns exec " . $router . " sysctl -w net.ipv4.conf.all.arp_ignore=1 > /dev/null";
+	system($cmd1);
+	my $cmd2 = $ipCMD . " netns exec " . $router . " sysctl -w net.ipv4.conf.all.arp_announce=2 > /dev/null";
+	system($cmd2);
+}
