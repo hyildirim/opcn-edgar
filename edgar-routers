@@ -1,0 +1,68 @@
+use Sys::Hostname;
+
+my %routers;
+getActiveRouters(\%routers);
+getRouterSummary(\%routers);
+
+
+#use Data::Dumper; print Dumper(%routers);
+
+
+
+sub getRouterSummary
+{
+   my ($r) = @_;
+   foreach my $router (keys %routers)
+   {
+      #print "Checking Connection Count for Router [$router]\n";
+      $routers{$router}{'connectionCount'} = getRouterConnectionCount($router);
+      $routers{$router}{'host'} = hostname;
+   }
+   print "-" x 60 . "\n";
+   foreach my $router (keys %routers)
+   {
+      printf ("%-10s : %-40s\n", "Router", $router);
+      printf ("%-10s : %-40s\n", "Hosted On", $routers{$router}{'host'});
+      printf ("%-10s : %-40s\n", "Connections", $routers{$router}{'connectionCount'});
+      print "-" x 60 . "\n";
+   }
+}
+sub getActiveRouters
+{
+   my ($r) = @_;
+   open (R, "/sbin/ip netns |");
+   while (<R>)
+   {
+      chomp;
+      if (/qrouter/)
+      {
+         $$r{$_}{'active'} = 1;
+
+      }
+   }
+   close R;
+   return;
+}
+
+
+sub getRouterConnectionCount
+{
+   my ($r) = @_;
+   my $connCount = 0;
+   open (C, "/sbin/ip netns exec $r conntrack -L |");
+   while (<C>)
+   {
+      chomp;
+      $connCount++;
+      next;
+      if (/flow entries have been shown/)
+      {
+         my @a = split(/:/);
+	 print "[$_]\n";
+         my $connCount = $a[1];
+         $connCount =~ s/ flow entries have been shown//g;
+      }
+   }
+   close C;
+   return($connCount);
+}
