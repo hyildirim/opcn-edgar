@@ -27,7 +27,7 @@ cleanOutDir($outDir);
 # nscli info 837934 >> 210706-04637.txt
 # nscli info 837935 >> 210706-04637.txt
 
-
+# create an out directory first "mkdir out"
 
 $poCtr = 20;
 while (<>)
