@@ -1,0 +1,52 @@
+#!/usr/bin/perl
+
+	printf ("%-20s %-12s %-12s %-12s %-12s\n", "Interface", "rxErrors", "rxDrops", "txErrors", "txDrops");
+open(F, "cat /proc/net/dev |");
+while(<F>)
+{
+	chomp;
+	next if (/^Inter-/);
+	next if (/\s+face/);
+	my $line = trim($_);
+	my (@a) = split(/\s+/, $line);
+	$int = shift(@a);
+	$rxBytes = shift(@a);
+	$rxPackets = shift(@a);
+	$rxErrors = shift(@a);
+	$rxDrops = shift(@a);
+	$rxFifoErrors = shift(@a);
+	$rxLengthErrors = shift(@a);
+	$rxFrameErrors = shift(@a);
+	$rxCompressed = shift(@a);
+	$multicast = shift(@a);
+
+	$txBytes = shift(@a);
+        $txPackets = shift(@a);
+        $txErrors = shift(@a);
+        $txDrops = shift(@a);
+        $txFifoErrors = shift(@a);
+        $txLengthErrors = shift(@a);
+        $txFrameErrors = shift(@a);
+        $txCompressed = shift(@a);
+
+
+	
+
+	#print "$_ [" . scalar(@a) . "]\n";
+	#print "[$int] [$rxErrors] [$rxDrops] [$txErrors] [$txDrops]\n";
+	if ($rxErrors == 0 && $rxDrops ==0 && $txErrors == 0 && $txDrops == 0 ) { next; }
+
+	printf ("%-20s %-12s %-12s %-12s %-12s\n", $int, $rxErrors, $rxDrops, $txErrors, $txDrops);
+	
+
+}
+
+close F;
+
+sub trim
+{
+	my ($s) = @_;
+	$s =~ s/^\s+//g;
+	$s =~ s/\s+$//g;
+	return($s);
+}
