@@ -23,6 +23,7 @@ $vlans{1053} = "5769161-ENV87042-OLE_PRIV_PRVDR";
 $vlans{1054} = "5769161-ENV87042-OLE_RESERVED";
 $vlans{1055} = "5769161-ENV87042-OLE_MGMT_PUB";
 $vlans{1056} = "5769161-ENV87042-OLE_RHOSP_PUB_0";
+$vlans{1057} = "5769161-ENV87042-OLE_RHOSP_PUB_1";
 $vlans{1058} = "5769161-ENV87042-OLE-MGT";
 
 #------------------------------------------------------------------------------
@@ -133,7 +134,7 @@ while (<>)
 interface Port-Channel$poBond0
    description $deviceNo-bond0
    switchport
-   mtu 9000
+   mtu 9216
    speed auto
    no switchport trunk native vlan
    switchport trunk native vlan $bond0Native
@@ -141,20 +142,23 @@ interface Port-Channel$poBond0
    switchport trunk allowed vlan add $bond0Tagged
    switchport mode trunk
    no lacp suspend-individual
+   spanning-tree bpduguard enable
    vpc $poBond0
    
 
 interface $sPort
    no channel-group
+   mtu 9216
    description $deviceNo-bond0
    no switchport trunk native vlan
    switchport trunk allowed vlan none
    switchport trunk native vlan $bond0Native
    switchport trunk allowed vlan add $bond0Tagged
    switchport mode trunk
+   no channel-group
    channel-group $poBond0 mode active
    no lldp receive
-   spanning-tree portfast
+   spanning-tree port type edge
    spanning-tree bpduguard enable
    
    
@@ -168,7 +172,7 @@ interface $sPort
 interface Port-Channel$poBond1
    description $deviceNo-bond1
    switchport
-   mtu 9000
+   mtu 9216
    speed auto
    no switchport trunk native vlan
    switchport trunk allowed vlan none
@@ -176,11 +180,13 @@ interface Port-Channel$poBond1
    switchport trunk allowed vlan add $bond1Tagged
    switchport mode trunk
    no lacp suspend-individual
+   spanning-tree bpduguard enable
    vpc $poBond1
 
 interface $sPort
    description $deviceNo-bond1
    no channel-group
+   mtu 9216
    switchport mode trunk
    no switchport trunk native vlan
    switchport trunk allowed vlan none
@@ -188,7 +194,7 @@ interface $sPort
    switchport trunk allowed vlan add $bond1Tagged
    channel-group $poBond1 mode active
    no lldp receive
-   spanning-tree portfast
+   spanning-tree port type edge
    spanning-tree bpduguard enable
    
       };
@@ -213,19 +219,21 @@ interface $sPort
 interface Port-Channel$poBond0
    description $deviceNo-bond0
    switchport
-   mtu 9000
+   mtu 9216
    speed auto
    no switchport trunk native vlan
    switchport trunk native vlan $bond0Native
    switchport trunk allowed vlan none
    switchport trunk allowed vlan add $bond0Tagged
    switchport mode trunk
+   spanning-tree bpduguard enable
    no lacp suspend-individual
    vpc $poBond0
    
 
 interface $sPort
    no channel-group
+   mtu 9216
    description $deviceNo-bond0
    no switchport trunk native vlan
    switchport trunk allowed vlan none
@@ -234,7 +242,7 @@ interface $sPort
    switchport mode trunk
    channel-group $poBond0 mode active
    no lldp receive
-   spanning-tree portfast
+   spanning-tree port type edge
    spanning-tree bpduguard enable
    
    
